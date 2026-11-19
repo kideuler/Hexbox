@@ -1,0 +1,2 @@
+counts in [6,14]: 40 blocks, 50s; valid (exact counts, conformal, minSJ>0): 40/40; minSJ p5/median 0.30/0.47; meanSJ median 0.88
+worst minSJ: [0.285 0.287 0.304 0.361 0.367]

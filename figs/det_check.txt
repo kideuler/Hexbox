@@ -1,0 +1,1 @@
+60 blocks, 360 faces: 360 identical to the stand-alone template; worst minSJ 0.244; 50s

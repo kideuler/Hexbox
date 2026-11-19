@@ -110,6 +110,8 @@ def _build(n, pad=0.4, min_belt=5, smooth_iters=300, sheets=None, opt=True, verb
     if opt:
         optimize(mesh)
     got = edge_counts(mesh)
+    if not np.array_equal(got, n):             # a shrink box came out empty: block too small for it
+        raise RuntimeError(f"counts not reproduced: got {got.tolist()}")
     check_conformal(mesh)
     sj = scaled_jacobian(mesh.X, mesh.H)
     if verbose:

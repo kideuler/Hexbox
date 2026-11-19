@@ -34,7 +34,7 @@ def respace_block_edges(mesh):
                 X[ids, free] = np.arange(1, len(ids) + 1) / (len(ids) + 1)
 
 
-def laplacian(mesh, iters=200, relax=0.6):
+def laplacian(mesh, iters=200, relax=0.6, move_faces=True):
     """Jacobi Laplacian.  Interior nodes use all edge neighbours; face nodes use only neighbours on
     the same cube face (so they slide in-plane); edge/corner nodes are frozen."""
     X = mesh.X
@@ -52,7 +52,7 @@ def laplacian(mesh, iters=200, relax=0.6):
     m = keep(src, dst)
     src, dst = src[m], dst[m]
     deg = np.bincount(src, minlength=len(X)).astype(float)
-    move = (nfix <= 1) & (deg > 0)
+    move = ((nfix <= 1) if move_faces else (nfix == 0)) & (deg > 0)
     for _ in range(iters):
         acc = np.zeros_like(X)
         np.add.at(acc, src, X[dst])
@@ -85,12 +85,14 @@ def _objective(X, H, delta):
     return f.sum(), G, D.min()
 
 
-def optimize(mesh, schedule=(0.3, 0.1, 0.03, 0.01, 0.001), maxiter=1000, verbose=False):
+def optimize(mesh, schedule=(0.3, 0.1, 0.03, 0.01, 0.001), maxiter=1000, verbose=False, move_faces=True):
     """Untangle + smooth by continuation on the determinant regularisation delta (large -> small).
     Free dofs: all coords of interior nodes, in-plane coords of face nodes; block-edge nodes fixed."""
     from scipy.optimize import minimize
     fx = mesh.fixed
-    free = (~fx) & (fx.sum(1) <= 1)[:, None]
+    free = (~fx) & ((fx.sum(1) <= 1) if move_faces else (fx.sum(1) == 0))[:, None]
+    if not free.any():                      # nothing to move (e.g. a tiny structured block)
+        return mesh
     P = mesh.X[mesh.H]
     scale = np.median(np.abs(np.linalg.det(P[:, [1, 3, 4]] - P[:, [0]])))
     for t in schedule:
@@ -105,3 +107,46 @@ def optimize(mesh, schedule=(0.3, 0.1, 0.03, 0.01, 0.001), maxiter=1000, verbose
         if verbose:
             print(f"  delta/scale {t:g}: minSJ {scaled_jacobian(mesh.X, mesh.H).min():.3f}")
     return mesh
+
+
+def _obj2d(UV, Q, delta):
+    """2D inverse mean ratio over quad corners, |e1|^2+|e2|^2 / (2 h(cross(e1,e2)))."""
+    P = UV[Q]
+    e1 = np.roll(P, -1, axis=1) - P
+    e2 = np.roll(P, 1, axis=1) - P
+    D = e1[..., 0] * e2[..., 1] - e1[..., 1] * e2[..., 0]
+    F = (e1 ** 2).sum(-1) + (e2 ** 2).sum(-1)
+    s = np.sqrt(D ** 2 + 4 * delta ** 2); h = 0.5 * (D + s); dh = 0.5 * (1 + D / s)
+    f = F / (2 * h)
+    a = 1 / h; b = F / (2 * h ** 2) * dh
+    g1 = a[..., None] * e1 - b[..., None] * np.stack([e2[..., 1], -e2[..., 0]], -1)
+    g2 = a[..., None] * e2 - b[..., None] * np.stack([-e1[..., 1], e1[..., 0]], -1)
+    G = np.zeros_like(UV)
+    np.add.at(G, np.roll(Q, -1, axis=1), g1); np.add.at(G, np.roll(Q, 1, axis=1), g2)
+    np.add.at(G, Q, -(g1 + g2))
+    return f.sum(), G
+
+
+def optimize2d(UV, Q, schedule=(0.3, 0.1, 0.01, 0.001), maxiter=1000):
+    """Untangle+smooth a quad mesh of the unit square; boundary nodes fixed.  Deterministic."""
+    from scipy.optimize import minimize
+    UV = UV.copy()
+    P = UV[Q]
+    area = 0.5 * np.sum(P[:, :, 0] * np.roll(P[:, :, 1], -1, 1) - np.roll(P[:, :, 0], -1, 1) * P[:, :, 1], axis=1)
+    if np.median(area) < 0:
+        Q = Q[:, ::-1]
+    onb = (np.abs(UV) < 1e-12) | (np.abs(UV - 1) < 1e-12)
+    used = np.zeros(len(UV), bool); used[Q.ravel()] = True
+    free = used & ~onb.any(1)
+    if not free.any():
+        return UV
+    scale = np.median(np.abs(area))
+    for t in schedule:
+        def fun(z):
+            X = UV.copy(); X[free] = z.reshape(-1, 2)
+            v, G = _obj2d(X, Q, t * scale)
+            return v, G[free].ravel()
+        r = minimize(fun, UV[free].ravel(), jac=True, method="L-BFGS-B",
+                     bounds=[(0, 1)] * (2 * int(free.sum())), options={"maxiter": maxiter})
+        UV[free] = r.x.reshape(-1, 2)
+    return UV

@@ -103,3 +103,74 @@ def plot_cut(mesh, ax=None, title=None, keep=lambda c: (c[:, 0] < 0.55) | (c[:, 
     if title:
         ax.set_title(title, fontsize=10)
     return ax
+
+
+# ---------------------------------------------------------------------------------------------
+# multi-block pictures (physical coordinates)
+# ---------------------------------------------------------------------------------------------
+BLOCK_COLORS = plt.get_cmap("tab20")(np.arange(20) % 20)
+
+
+def surface_of(H, keep):
+    """Outer quads of the hex subset `keep` and the hex each one belongs to."""
+    from .mesh import HEX_FACES
+    sel = np.where(keep)[0]
+    F = H[sel][:, HEX_FACES].reshape(-1, 4)
+    _, inv, cnt = np.unique(np.sort(F, 1), axis=0, return_inverse=True, return_counts=True)
+    vis = cnt[inv.ravel()] == 1
+    return F[vis], np.repeat(sel, 6)[vis]
+
+
+def equal_box(ax, P):
+    lo, hi = P.min(0), P.max(0)
+    ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])
+    ax.set_box_aspect(np.maximum(hi - lo, 1e-9))
+
+
+def draw_hexes(ax, X, H, colors, keep=None, lw=0.25, alpha=1.0):
+    """Surface of the kept hexes; colors: (M,4) per hex."""
+    keep = np.ones(len(H), bool) if keep is None else keep
+    Q, owner = surface_of(H, keep)
+    ax.add_collection3d(Poly3DCollection(X[Q], facecolors=colors[owner], edgecolors="k", linewidths=lw, alpha=alpha))
+    equal_box(ax, X[Q].reshape(-1, 3))
+
+
+def draw_exploded(ax, parts, gap=0.35, lw=0.25):
+    """Each block's own boundary mesh, pushed away from the domain centre."""
+    cen = np.vstack([p["X"] for p in parts]).mean(0)
+    allP = []
+    for b, p in enumerate(parts):
+        Q = p["ref"].boundary_quads()
+        shift = gap * (p["X"].mean(0) - cen)
+        P = p["X"][Q] + shift
+        ax.add_collection3d(Poly3DCollection(P, facecolors=BLOCK_COLORS[b % 20], edgecolors="k", linewidths=lw))
+        allP.append(P.reshape(-1, 3))
+    equal_box(ax, np.vstack(allP))
+
+
+def block_face_quads(part, f, s):
+    ref = part["ref"]
+    Q = ref.boundary_quads()
+    return Q[np.all(np.abs(ref.X[Q][:, :, f] - s) < 1e-9, axis=1)]
+
+
+def draw_shared_face(ax, partA, faceA, partB, faceB, title=None, corners=None):
+    """One interface drawn from both sides (projected to the plane of its corners):
+    block A thick blue, block B thin dashed red.  Identical meshes look like one blue-red mesh."""
+    QA, QB = block_face_quads(partA, *faceA), block_face_quads(partB, *faceB)
+    PA, PB = partA["X"][QA], partB["X"][QB]
+    pts = PA.reshape(-1, 3)
+    c = pts.mean(0)
+    if corners is None:                     # best-fit plane
+        _, _, Vt = np.linalg.svd(pts - c, full_matrices=False)
+        e1, e2 = Vt[0], Vt[1]
+    else:                                   # (origin, U-end, V-end) corners: canonical orientation
+        o, cu, cv = map(np.asarray, corners)
+        e1 = (cu - o) / np.linalg.norm(cu - o)
+        e2 = (cv - o) - ((cv - o) @ e1) * e1; e2 /= np.linalg.norm(e2)
+    proj = lambda P: np.stack([(P - c) @ e1, (P - c) @ e2], -1)
+    ax.add_collection(PolyCollection(proj(PA), facecolors="#eef4fb", edgecolors="#1f5fa8", linewidths=2.2))
+    ax.add_collection(PolyCollection(proj(PB), facecolors="none", edgecolors="#d62728", linewidths=0.9, linestyles="--"))
+    ax.autoscale(); ax.set_aspect("equal"); ax.axis("off")
+    if title:
+        ax.set_title(title, fontsize=10)

@@ -1,0 +1,2 @@
+1. face traces: 4225 blocks (excess levels 0..2 on x- and y-edges), 25350 faces, 0 mismatches, 26s
+2. template symmetry: 625 face tuples x 7 non-trivial symmetries = 4375 checks, 0 topology mismatches; node positions differ by up to 7.2e-05
