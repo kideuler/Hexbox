@@ -1,0 +1,8 @@
+counts in [6,14]: 40 blocks, 48s; valid (minSJ>0): 40/40; minSJ p5/median 0.30/0.47; meanSJ median 0.88
+worst minSJ: [0.285 0.287 0.304 0.361 0.367]
+counts in [4,8]: 40 blocks, 16s; valid (minSJ>0): 40/40; minSJ p5/median 0.23/0.46; meanSJ median 0.85
+worst minSJ: [0.218 0.221 0.234 0.257 0.272]
+FAIL [2 4 5 3 3 2 2 5 5 2 5 4] not enough values to unpack (expected 2, got 0)
+FAIL [2 5 4 2 2 3 2 2 2 3 3 5] not enough values to unpack (expected 2, got 0)
+counts in [2,5]: 40 blocks, 1s; valid (minSJ>0): 38/40; minSJ p5/median 0.36/0.51; meanSJ median 0.78
+worst minSJ: [0.349 0.353 0.358 0.385 0.39 ]
